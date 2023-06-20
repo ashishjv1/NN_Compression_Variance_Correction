@@ -9,3 +9,13 @@
 **/image_tests/
 **/Decompose_SGD.ipynb/
 **/.vscode/
+**/tkd_new_tests.py
+**/Decomposition_Tests_with_splits_not_working.ipynb
+**/Decomposition_Tests.ipynb
+**/Decomposition_Tests_working.ipynb
+**/VBMF.py
+**/tkd.py
+**/data/
+**/models/
+**/saved_models/
+**/trained_nets/

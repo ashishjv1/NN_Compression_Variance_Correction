@@ -13,7 +13,6 @@ class decompose():
                 n_iter=5000,
                 lr=0.0005,
                 penalty=0.1,
-                optimizer=None,
                 print_iter = 1000,
                 **kwargs
                  ):
@@ -25,94 +24,116 @@ class decompose():
         self.ori_mean = torch.mean(tensor)
         self.core = kwargs.get('core', None)
         self.factors = factors
-        self.optimizer = optimizer
+        self.optimizer = kwargs.get('optimizer', "local")
         self.ftype = kwargs.get('ftype', None)
         self.print_iter = print_iter
+#         self.optim = None
 
-        if optimizer:
-           if optimizer.lower() =="ADAM":
-              self.optimizer = torch.optim.Adam([self.core] + self.factors, lr=lr) # type: ignore
-           elif optimizer.lower() == "SGD":
-              self.optimizer = torch.optim.SGD([self.core]+ self.factors, lr=lr) # type: ignore
-
+        
+     
+        if self.optimizer.lower() =="adam":
+            if self.ftype == 'mf':
+                self.optim = torch.optim.Adam([self.factors], lr=lr)
+            else:
+                self.optim = torch.optim.Adam([self.core] + self.factors, lr=lr)
+           
+        elif self.optimizer.lower() == "sgd":
+            if self.ftype == 'mf':
+                self.optim = torch.optim.SGD([self.factors], lr=lr)
+            else:
+                self.optim = torch.optim.SGD([self.core] + self.factors, lr=lr)
+           
  
     def SGD(self, params, lr):
         for param in params:
             param[:] = param - lr * param.grad
   
     def train(self):
-      if self.ftype == None:
-         
-         print("Tucker Decomposing...")
-      else:
-         print("Matrix Decomposing...")
-
-      for i in range(1, self.n_iter):
-         fact_distance = 0
-         core_dist = 0
-
-         # Important: do not forget to reset the gradients
-         if self.optimizer:
-            self.optimizer.zero_grad()
-         elif self.ftype == "mf":
-            for param in self.factors:
-               param.grad = None
-         else:   
-            for param in [self.core] + self.factors:
-               param.grad = None
+        if self.ftype == None or self.ftype == "tucker2":
             
-         # Reconstruct the tensor from the decomposed form
-         if self.ftype == "mf":
-            self.rec = torch.matmul(self.factors[0], self.factors[1].T)
-         else:
-            self.rec = tucker_to_tensor(self.core, self.factors)
+            print("Tucker Decomposing...")
+        else:
+            print("Matrix Decomposing...")
+        
+        print("Optimizer:", self.optimizer) 
 
-         # squared l2 loss
-         loss = (self.rec - self.tensor).pow(2).sum()
+        for i in range(1, self.n_iter):
+            fact_distance = 0
+            core_dist = 0
 
-         # squared penalty on the factors of the decomposition
-         if self.ftype == "mf":
-            for lists in self.factors:
-               for numbers in lists:
-                  for number in numbers:
-                     fact_distance += (abs(number.item()) - self.ori_mean) ** 2
-                     loss = loss + self.penalty * fact_distance 
-         else:
-            for elements in self.factors:
-               for items in elements:
-                  for values in items:
-                     fact_distance += (abs(values.item()) - self.ori_mean)**2
-                     loss = loss + self.penalty * fact_distance
-            if self.core.ndim == 3:
-               for ele in self.core:
-                  for itm in ele:
-                     for vals in itm:
-                        core_dist += (abs(vals.item()) - self.ori_mean)**2
-                        loss = loss + self.penalty * core_dist
-            elif self.core.ndim == 2:
-               for ele in self.core:
-                  for itm in ele:
-                     core_dist += (abs(itm.item()) - self.ori_mean)**2
-                     loss = loss + self.penalty * core_dist
+            # Important: do not forget to reset the gradients
+            if self.optimizer.lower() == "ADAM" or self.optimizer.lower() == "SGD":
+                self.optim.zero_grad()
+            
+            elif self.optimizer.lower() == "Local":
+                if self.ftype == "mf":
+                    for param in self.factors:
+                        param.grad = None
+                else:   
+                    for param in [self.core] + self.factors:
+                        param.grad = None
+            
+             # Reconstruct the tensor from the decomposed form
+            if self.ftype == "mf":
+                self.rec = torch.matmul(self.factors[0], self.factors[1].T)
             else:
-               for ele in self.core:
-                  for itm in ele:
-                     for vals in itm:
-                        for nums in vals:
-                           core_dist += (abs(nums.item()) - self.ori_mean)**2
-                           loss = loss + self.penalty * core_dist
+                self.rec = tucker_to_tensor(self.core, self.factors)
+
+             # squared l2 loss
+            loss = (self.rec - self.tensor).pow(2).sum()
+            
+            if self.ftype == "mf":
+                difference = sum((factor.var() - self.tensor.var()) for factor in self.factors) 
+                loss = loss + self.penalty * difference
+            else:
+                difference = sum((factor.var() - self.tensor.var()) for factor in self.factors) + (self.core.var() - self.tensor.var())  
+                
+                loss = loss + self.penalty * difference
+
+             # squared penalty on the factors of the decomposition
+#             if self.ftype == "mf":
+#                 for lists in self.factors:
+#                     for numbers in lists:
+#                         for number in numbers:
+#                             fact_distance += (abs(number.item()) - self.ori_mean) ** 2
+#                             loss = loss + self.penalty * fact_distance 
+#             else:
+#                 for elements in self.factors:
+#                     for items in elements:
+#                         for values in items:
+#                             fact_distance += (abs(values.item()) - self.ori_mean)**2
+#                             loss = loss + self.penalty * fact_distance
+#                 if self.core.ndim == 3:
+#                     for ele in self.core:
+#                         for itm in ele:
+#                             for vals in itm:
+#                                 core_dist += (abs(vals.item()) - self.ori_mean)**2
+#                                 loss = loss + self.penalty * core_dist
+#                 elif self.core.ndim == 2:
+#                     for ele in self.core:
+#                         for itm in ele:
+#                             core_dist += (abs(itm.item()) - self.ori_mean)**2
+#                             loss = loss + self.penalty * core_dist
+#                 else:
+#                     for ele in self.core:
+#                         for itm in ele:
+#                             for vals in itm:
+#                                 for nums in vals:
+#                                     core_dist += (abs(nums.item()) - self.ori_mean)**2
+#                                     loss = loss + self.penalty * core_dist
+
        
-         loss.backward(retain_graph=False)
+            loss.backward(retain_graph=False)
          
-         with torch.no_grad():
-            if self.optimizer: 
-               self.optimizer.step()
-            else:
-               if self.ftype == 'mf':
-                  self.SGD(self.factors, self.lr)
-               else:
-                  self.SGD([self.core] + self.factors, self.lr)
+            with torch.no_grad():
+                if self.optimizer.lower() == "ADAM" or self.optimizer.lower() == "SGD":
+                    self.optim.step()
+                elif self.optimizer.lower() == "local":
+                    if self.ftype == 'mf':
+                        self.SGD(self.factors, self.lr)
+                    else:
+                        self.SGD([self.core] + self.factors, self.lr)
 
-         if i % self.print_iter == 0:
-            self.rec_error = tl.norm(self.rec - self.tensor, 2)/tl.norm(self.tensor, 2)
-            print("Epoch %s,. Rec. error: %s, Variance %s" % (i, self.rec_error, fact_distance))
+            if i % self.print_iter == self.print_iter - 1:
+                self.rec_error = tl.norm(self.rec - self.tensor, 2)/tl.norm(self.tensor, 2)
+                print("Epoch %s,. Rec. error: %s, Variance %s" % (i, self.rec_error, difference))
