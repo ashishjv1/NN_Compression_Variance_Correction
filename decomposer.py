@@ -77,7 +77,7 @@ class decompose():
             if self.ftype == "mf":
                 self.rec = torch.matmul(self.factors[0], self.factors[1].T)
             else:
-                self.rec = tucker_to_tensor(self.core, self.factors)
+                self.rec = tucker_to_tensor((self.core, self.factors))
 
              # squared l2 loss
             loss = (self.rec - self.tensor).pow(2).sum()

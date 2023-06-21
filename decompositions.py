@@ -11,7 +11,7 @@ import tensorly as tl
 from tensorly.random import check_random_state
 from select_ranks import estimate_rank_for_compression_rate
 from replacement_utils import get_layer_by_name, replace_conv_layer_by_name
-from tkd_layers import TKD2_layer
+from tkd_layers_test import TKD2_layer
 from tqdm import tqdm
 
 

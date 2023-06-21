@@ -15,7 +15,7 @@ class TKD2_layer(torch.nn.Module):
     '''
                       
     '''
-    def __init__(self, layer, ranks, factors, split=True):
+    def __init__(self, layer, ranks, factors, num_groups=3):
         """
         """
         super(TKD2_layer, self).__init__()
@@ -30,6 +30,7 @@ class TKD2_layer(torch.nn.Module):
         self.dilation = layer.dilation
         self.kernel_size = layer.kernel_size
         self.is_bias = layer.bias is not None
+        self.num_groups = num_groups
         if self.is_bias:
             self.bias = layer.bias
             
@@ -63,29 +64,38 @@ class TKD2_layer(torch.nn.Module):
         self.last_layer.weight.data = last.unsqueeze(-1).unsqueeze(-1)
         self.core_layer.weight.data = core
        
+        in_splits = _split_channels(self.cin, self.num_groups)
+
+        ch_out_lst = [self.cin, self.ranks[0], self.ranks[1]]
+
+        linear = []
+        for idx, in_ch in enumerate(in_splits):
+            linear.append(torch.nn.Linear(in_ch, ch_out_lst[idx]))
         
-        self.linear1 = torch.nn.Linear(self.cin, self.ranks[0])
-        self.linear2 = torch.nn.Linear(self.cin, self.ranks[1])
-        # self.linear1 = torch.nn.Conv2d(self.cin, self.ranks[0], 1)
-        # self.linear2 = torch.nn.Conv2d(self.cin, self.ranks[1], 1)
+        self.linear3 = torch.nn.Linear(self.ranks[0] + self.ranks[1] + self.cout, self.cout)
+        # self.last = torch.nn.Conv2d(self.ranks[0] + self.ranks[1] + self.cout, self.cout, 1)
         
-        # self.linear3 = torch.nn.Linear(self.ranks[0] + self.ranks[1] + self.cout, self.cout)
-        self.linear3 = torch.nn.Conv2d(self.ranks[0] + self.ranks[1] + self.cout, self.cout, 1)
-       
+        
+        self.linears = nn.ModuleList(linear)
+        self.splits = in_splits
 
 
 
     def forward(self, x):
-        
-        x1 = self.first_layer(x)
+        x_split = torch.split(x, self.splits, 1)
+        x_out = []
+        # print(self.ranks)
+        for spx, linears in zip(x_split, self.linears):
+            x_out.append(linears(spx.permute(0,3,2,1)).permute(0,3,2,1))
+        x1 = self.first_layer(x_out[0])
         # x2 = self.last_layer(self.linear1(x.permute(0,3,2,1)).permute(0,3,2,1))
-        x2 = self.last_layer(self.linear1(x))
+        x2 = self.last_layer(x_out[1])
 
         # x3 = self.core_layer(self.linear2(x.permute(0,3,2,1)).permute(0,3,2,1))
-        x3 = self.core_layer(self.linear2(x))
+        x3 = self.core_layer(x_out[2])
 
-        # catr = self.linear3(torch.cat((x1, x2, x3), dim=1).permute(0,3,2,1)).permute(0,3,2,1)
-        catr = self.linear3(torch.cat((x1, x2, x3), dim=1)) 
+        catr = self.linear3(torch.cat((x1, x2, x3), dim=1).permute(0,3,2,1)).permute(0,3,2,1)
+        # catr = self.linear3(torch.cat((x1, x2, x3), dim=1)) 
 
 
         return catr
